@@ -1,0 +1,89 @@
+name: dental-clinic
+
+services:
+  # ---------------------------------------------------------------
+  # Databases - one per microservice (strict data isolation)
+  # ---------------------------------------------------------------
+  auth-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${AUTH_DB_USER:?AUTH_DB_USER is required}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?AUTH_DB_PASSWORD is required}
+      POSTGRES_DB: ${AUTH_DB_NAME:?AUTH_DB_NAME is required}
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  clinic-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CLINIC_DB_USER:?CLINIC_DB_USER is required}
+      POSTGRES_PASSWORD: ${CLINIC_DB_PASSWORD:?CLINIC_DB_PASSWORD is required}
+      POSTGRES_DB: ${CLINIC_DB_NAME:?CLINIC_DB_NAME is required}
+    volumes:
+      - clinic_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ---------------------------------------------------------------
+  # Authentication microservice  ->  /api/auth/*
+  # ---------------------------------------------------------------
+  authentication:
+    build: ./authentication
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=192
+      PORT: 4001
+      DB_HOST: auth-db
+      DB_PORT: 5432
+      DB_USER: ${AUTH_DB_USER}
+      DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      DB_NAME: ${AUTH_DB_NAME}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    # TEMPORARY for step-1 testing. Remove once the proxy fronts everything.
+    ports:
+      - "4001:4001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4001/api/auth/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # backend, frontend and proxy are added in the next steps
+
+volumes:
+  auth_db_data:
+  clinic_db_data:

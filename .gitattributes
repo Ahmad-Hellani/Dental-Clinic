@@ -1,0 +1,6 @@
+# Force LF everywhere so scripts/configs work on the Ubuntu VM
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
