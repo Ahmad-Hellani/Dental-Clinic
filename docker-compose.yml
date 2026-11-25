@@ -68,9 +68,9 @@ services:
     depends_on:
       auth-db:
         condition: service_healthy
-    # TEMPORARY for step-1 testing. Remove once the proxy fronts everything.
+    # debug only, loopback-bound. Remove for the final submission.
     ports:
-      - "4001:4001"
+      - "127.0.0.1:4001:4001"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4001/api/auth/health >/dev/null || exit 1"]
       interval: 10s
@@ -82,7 +82,67 @@ services:
         limits:
           memory: 256M
 
-  # backend, frontend and proxy are added in the next steps
+  # ---------------------------------------------------------------
+  # Clinic domain microservice  ->  /api/*  (never touches auth-db)
+  # ---------------------------------------------------------------
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=192
+      PORT: 4002
+      DB_HOST: clinic-db
+      DB_PORT: 5432
+      DB_USER: ${CLINIC_DB_USER}
+      DB_PASSWORD: ${CLINIC_DB_PASSWORD}
+      DB_NAME: ${CLINIC_DB_NAME}
+      AUTH_SERVICE_URL: http://authentication:4001
+      CLINIC_TIMEZONE: ${CLINIC_TIMEZONE:-Asia/Beirut}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+    depends_on:
+      clinic-db:
+        condition: service_healthy
+      authentication:
+        condition: service_healthy
+    # debug only, loopback-bound. Remove for the final submission.
+    ports:
+      - "127.0.0.1:4002:4002"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4002/api/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ---------------------------------------------------------------
+  # Reverse proxy: the ONLY service published to the network
+  # ---------------------------------------------------------------
+  proxy:
+    build: ./proxy
+    restart: unless-stopped
+    ports:
+      - "${PROXY_PORT:-8080}:80"
+    depends_on:
+      authentication:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # frontend is added in the next step
 
 volumes:
   auth_db_data:
